@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sony CLIÉ MP3 Converter</title>
+  <!-- LameJS MP3 Encoder & JSZip Archive Creator -->
+  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #8cc817;
+      color: #1c1e21;
+      max-width: 680px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .container {
+      background: #ffffff;
+      padding: 28px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-top: 0;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    #drop-zone {
+      border: 2px dashed #0066cc;
+      border-radius: 8px;
+      padding: 36px 20px;
+      text-align: center;
+      background: #f4f8ff;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    #drop-zone.hover {
+      background: #e1edff;
+      border-color: #004499;
+    }
+    #drop-zone p { margin: 0; color: #444; }
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 20px 0;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    label { font-weight: 600; font-size: 0.95rem; }
+    select, button {
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 0.95rem;
+    }
+    button {
+      background: #0066cc;
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) { background: #0052a3; }
+    button:disabled { background: #aaccee; cursor: not-allowed; }
+    .btn-zip {
+      background: #28a745;
+    }
+    .btn-zip:hover:not(:disabled) {
+      background: #218838;
+    }
+    .file-list { margin-top: 16px; }
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .file-info { font-size: 0.9rem; word-break: break-all; }
+    .file-status { font-size: 0.85rem; font-weight: 600; margin-left: 12px; }
+    .status-pending { color: #6c757d; }
+    .status-progress { color: #0066cc; }
+    .status-done { color: #28a745; }
+    .status-error { color: #dc3545; }
+  </style>
+</head>
+<body>
+
+<center><img src="https://upload.wikimedia.org/wikipedia/commons/f/f5/Sony_Clie_logo.svg?utm_source=fr.wikipedia.org&utm_campaign=index&utm_content=original"></center>
+  <h1>Audio Converter</h1>
+
+<div class="container">
+     <center>This app converts your audio files into the proper format for the Sony Clie’s built‑in player, and the resulting files must be placed in /PALM/Programs/MSAUDIO on your Memory Stick.</center><br/>
+
+  <div id="drop-zone">
+    <p>Drag & drop your audio files here or <strong>click to browse</strong></p>
+    <p style="font-size:0.8rem; color:#666; margin-top:6px;">Supported formats: WAV, MP3, FLAC</p>
+    <input type="file" id="file-input" multiple accept=".wav,.mp3,.flac,audio/*" style="display:none">
+  </div>
+
+  <div class="controls">
+    <div>
+      <label for="bitrate">Bitrate (CBR): </label>
+      <select id="bitrate">
+		<option value="64">64 kbps</option>
+        <option value="96">96 kbps</option>
+        <option value="128">128 kbps</option>
+        <option value="160">160 kbps</option>
+        <option value="192">192 kbps</option>
+        <option value="256" selected>256 kbps</option>
+        <option value="320">320 kbps</option>
+      </select>
+    </div>
+    <div class="btn-group">
+      <button id="encode-btn" disabled>Convert to MP3</button>
+      <button id="download-all-btn" class="btn-zip" style="display: none;">Download All (.ZIP)</button>
+    </div>
+  </div>
+
+  <div class="file-list" id="file-list"></div>
+</div>
+<br/>
+    <center>Tested on Sony Clié SJ33, NR70, NX70, TG50, TH55 - Github project</center><br/>
+
+
+<script>
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const encodeBtn = document.getElementById('encode-btn');
+  const downloadAllBtn = document.getElementById('download-all-btn');
+  const fileListContainer = document.getElementById('file-list');
+  const bitrateSelect = document.getElementById('bitrate');
+
+  let queue = [];
+  let convertedFiles = [];
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('hover');
+  });
+
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('hover'));
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('hover');
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleFiles(e.target.files);
+  });
+
+  function handleFiles(files) {
+    for (const file of files) {
+      const id = 'file-' + Math.random().toString(36).substr(2, 9);
+      const item = { id, file, status: 'pending' };
+      queue.push(item);
+      renderFileItem(item);
+    }
+    updateButtonState();
+  }
+
+  function renderFileItem(item) {
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    div.id = item.id;
+    div.innerHTML = `
+      <div class="file-info">
+        <strong>${escapeHtml(item.file.name)}</strong> 
+        <span style="color:#888;">(${formatBytes(item.file.size)})</span>
+      </div>
+      <div class="file-action" id="action-${item.id}">
+        <span class="file-status status-pending">Pending</span>
+      </div>
+    `;
+    fileListContainer.appendChild(div);
+  }
+
+  function updateButtonState() {
+    const hasPending = queue.some(i => i.status === 'pending');
+    encodeBtn.disabled = !hasPending;
+  }
+
+  encodeBtn.addEventListener('click', async () => {
+    encodeBtn.disabled = true;
+    const bitrate = parseInt(bitrateSelect.value, 10);
+
+    for (const item of queue) {
+      if (item.status !== 'pending') continue;
+
+      item.status = 'processing';
+      const actionEl = document.getElementById(`action-${item.id}`);
+      actionEl.innerHTML = `<span class="file-status status-progress">Decoding...</span>`;
+
+      try {
+        const mp3Blob = await processAudioFile(item.file, bitrate, (percent) => {
+          actionEl.innerHTML = `<span class="file-status status-progress">Encoding ${percent}%</span>`;
+        });
+
+        item.status = 'done';
+        const outName = item.file.name.replace(/\.[^/.]+$/, "") + "_CLIE.mp3";
+        
+        convertedFiles.push({ filename: outName, blob: mp3Blob });
+        actionEl.innerHTML = `<span class="file-status status-done">Done</span>`;
+      } catch (err) {
+        console.error(err);
+        item.status = 'error';
+        actionEl.innerHTML = `<span class="file-status status-error">Error</span>`;
+      }
+    }
+
+    if (convertedFiles.length > 0) {
+      downloadAllBtn.style.display = 'inline-block';
+    }
+  });
+
+  downloadAllBtn.addEventListener('click', async () => {
+    if (convertedFiles.length === 0) return;
+    
+    downloadAllBtn.disabled = true;
+    downloadAllBtn.innerText = "Creating ZIP...";
+
+    const zip = new JSZip();
+    convertedFiles.forEach(file => {
+      zip.file(file.filename, file.blob);
+    });
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const zipUrl = URL.createObjectURL(zipBlob);
+    
+    const a = document.createElement('a');
+    a.href = zipUrl;
+    a.download = "sony_clie_mp3s.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    downloadAllBtn.disabled = false;
+    downloadAllBtn.innerText = "Download All (.ZIP)";
+  });
+
+  async function processAudioFile(file, bitrate, onProgress) {
+    const arrayBuffer = await file.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
+    const audioBuffer = await resampleTo44100(decodedData);
+
+    const numChannels = audioBuffer.numberOfChannels;
+    const sampleRate = 44100;
+    const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, bitrate);
+    const mp3Data = [];
+
+    const samplesL = floatTo16BitPCM(audioBuffer.getChannelData(0));
+    const samplesR = numChannels > 1 ? floatTo16BitPCM(audioBuffer.getChannelData(1)) : samplesL;
+
+    const blockSize = 1152;
+    const totalSamples = samplesL.length;
+
+    for (let i = 0; i < totalSamples; i += blockSize) {
+      const leftChunk = samplesL.subarray(i, i + blockSize);
+      let mp3buf;
+
+      if (numChannels === 2) {
+        const rightChunk = samplesR.subarray(i, i + blockSize);
+        mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+      } else {
+        mp3buf = mp3encoder.encodeBuffer(leftChunk);
+      }
+
+      if (mp3buf.length > 0) mp3Data.push(mp3buf);
+
+      if (i % (blockSize * 50) === 0) {
+        const progress = Math.min(100, Math.round((i / totalSamples) * 100));
+        onProgress(progress);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    const endBuf = mp3encoder.flush();
+    if (endBuf.length > 0) mp3Data.push(endBuf);
+
+    return new Blob(mp3Data, { type: 'audio/mp3' });
+  }
+
+  async function resampleTo44100(audioBuffer) {
+    if (audioBuffer.sampleRate === 44100) return audioBuffer;
+
+    const targetRate = 44100;
+    const numChannels = audioBuffer.numberOfChannels;
+    const frameCount = Math.ceil(audioBuffer.duration * targetRate);
+
+    const offlineCtx = new OfflineAudioContext(numChannels, frameCount, targetRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+
+    return await offlineCtx.startRendering();
+  }
+
+  function floatTo16BitPCM(input) {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return output;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+  }
+</script>
+</body>
+</html>
