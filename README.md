@@ -1,2 +1,5 @@
-# Sony-Cli-Audio-Converter
-Web audio converter for Sony CLIÉ. Convert WAV, MP3 &amp; FLAC to Sony Clié compatible audio format
+# Sony Clié Audio Converter
+
+ - Open converter.html in any modern web browser.
+ - Drag and drop audio files & select bitrate.
+ - Click Convert to MP3 and copy output files to /PALM/Programs/MSAUDIO/.
